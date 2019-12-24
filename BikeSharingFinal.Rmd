@@ -1,0 +1,235 @@
+---
+title: "bikes"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+##Load and examine data. Bike usage versus hour of day. 
+```{r}
+
+library(ggplot2)
+library(tidyverse)
+library(readr)
+library(dplyr)
+
+
+bike_data = read.csv("london_merged.csv")
+
+head(bike_data)
+dim(bike_data)
+
+#add time as a variable
+bike_data = bike_data %>%
+   mutate(time = as.numeric(substring(timestamp, 12, 13)))
+
+#plot usage vs hour of day
+hours = aggregate(bike_data, by=list(Time = bike_data$time), mean)
+head(hours)
+
+ggplot(hours, aes(x=time, y=cnt)) + geom_point()
+
+#plot usage throughout all the days 
+
+daily_bike_data = bike_data %>% mutate(day = as.Date(timestamp, format="%Y-%m-%d")) %>%
+  group_by(day) %>% # group by the day column
+  summarise(day_cnt=sum(cnt))  # calculate the SUM of all cnts that occurred on each day
+
+dim(daily_bike_data)
+head(daily_bike_data, 50)
+
+#plot bike usage vs day
+ggplot(daily_bike_data, aes(x = day, y = day_cnt)) + geom_point() + labs(title = "Total bike usage per day over the full 2 years")
+```
+
+
+## Usage versus Weather Code
+```{r}
+no_night <- bike_data %>%
+  filter(time >= 4 & time <= 21)
+boxplot(cnt~weather_code,
+data= no_night,
+main="Bike Count according to Weather Code",
+xlab="Weather Code",
+ylab="Bike Count",
+col="yellow",
+border= "blue"
+)
+
+```
+
+
+
+## Linear Models of All Rides
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(readr)
+library(dplyr)
+
+bike_data <- read.csv("london_merged.csv")
+head(bike_data, 24)
+dim(bike_data)
+
+bike_data <- bike_data %>%
+  mutate(time = as.numeric(substring(timestamp, 12, 13)))
+
+model1 <- lm(cnt ~ hum, data = bike_data)
+model2 <- lm(cnt ~ t1, data = bike_data)
+model3 <- lm(cnt ~ t1 + hum + is_weekend, data = bike_data)
+
+summary(model1)
+summary(model2)
+summary(model3)
+
+mean(model1$residuals^2)
+mean(model2$residuals^2)
+mean(model3$residuals^2)
+
+ggplot(bike_data, aes(y = cnt, x = t1, color = hum)) + geom_point()
+```
+
+## Linear Models of Weekend Rides
+```{r}
+weekend_bikes <- bike_data %>%
+  filter(is_weekend == 1)%>%
+  filter(time >= 4 & time <= 21)
+
+model1_2 <- lm(cnt ~ hum, data = weekend_bikes)
+model2_2 <- lm(cnt ~ t1, data = weekend_bikes)
+model3_2 <- lm(cnt ~ t1 + hum, data = weekend_bikes)
+
+mean(model1_2$residuals^2)
+mean(model2_2$residuals^2)
+mean(model3_2$residuals^2)
+
+summary(model1_2)
+summary(model2_2)
+summary(model3_2)
+
+ggplot(weekend_bikes, aes(y = cnt, x = t1, color = hum)) + geom_point()
+```
+## Temperature (how it feels)
+```{r}
+
+
+model3_3 <- lm(cnt ~ t2 + hum, data = weekend_bikes)
+
+mean(model3_3$residuals^2)
+
+summary(model3_3)
+
+ggplot(weekend_bikes, aes(y = cnt, x = t2, color = hum)) + geom_point()
+
+modt2_results <- data.frame(observed = weekend_bikes$cnt, predicted = model3_3$fitted.values, residual = model3_3$residuals)
+
+ggplot(modt2_results, aes(y = observed, x = predicted))+ geom_point()
+ggplot(modt2_results, aes(y = residual, x = predicted))+ geom_point() + geom_hline(yintercept = 0)
+
+ggplot(modt2_results, aes(sample = residual)) + 
+    geom_qq()
+```
+
+## Model Assumptions for Weekend Rides
+```{r}
+mod_results <- data.frame(observed = weekend_bikes$cnt, predicted = model3_2$fitted.values, residual = model3_2$residuals)
+
+ggplot(mod_results, aes(y = observed, x = predicted))+ geom_point()
+ggplot(mod_results, aes(y = residual, x = predicted))+ geom_point() + geom_hline(yintercept = 0)
+
+ggplot(mod_results, aes(sample = residual)) + 
+    geom_qq()
+```
+
+
+## Determining whether current weather or previous weather (12 hours or 24 hours before) is a better predictor of bike usage
+```{r}
+#create variables representing temperature 12 and 24 hours before
+lagged_bike_data = bike_data %>% 
+mutate(tmp12 =lag(t1, n = 12)) %>%
+mutate(tmp24 =lag(t1, n = 24)) %>% 
+mutate(hum12 =lag(hum, n = 12)) %>%
+mutate(hum24 =lag(hum, n = 24))
+
+#remove rows that don't have data due to being lagged 
+lagged_bike_data <- lagged_bike_data[-1:-24,]
+
+#filter out times between 8 pm and 6 am and weekdays
+dayUsage = lagged_bike_data %>% filter(time >= 6 & time <= 20)
+weekendDayUsage <- dayUsage %>% filter(is_weekend == 1)
+
+#after filtering for only weekend 
+ggplot(weekendDayUsage, aes(y = cnt, x = t1, color = hum)) + geom_point()+ labs(title = "bike count versus temperature for weekend day usage")
+
+
+ggplot(weekendDayUsage, aes(y = cnt, x = tmp12, color = hum12)) + geom_point()+ labs(title = "bike count versus temperature 12 hours before for weekend day usage") 
+
+
+ggplot(weekendDayUsage, aes(y = cnt, x = tmp24, color = hum24)) + geom_point()+ labs(title = "bike count versus temperature 24 hours before for weekend day usage") 
+
+#build models for weekend
+weekendUsageT1 <- lm(cnt ~ t1 + hum, data = weekendDayUsage)
+weekendUsage12 <- lm(cnt ~ tmp12 + hum12 , data = weekendDayUsage)
+weekendUsage24 <- lm(cnt ~ tmp24 + hum24 , data = weekendDayUsage)
+
+summary(weekendUsageT1) #adjusted R-squared = .4823
+summary(weekendUsage12) #adjusted R-squared = .09851
+summary(weekendUsage24) #adjusted R-squared = .3198 
+
+mod_results1 <- data.frame(observed = weekendDayUsage$cnt, predicted = weekendUsageT1$fitted.values, residual = weekendUsageT1$residuals)
+
+#residuals for model 1
+ggplot(mod_results1, aes(y = observed, x = predicted))+ geom_point()
+ggplot(mod_results1, aes(y = residual, x = predicted))+ geom_point() + geom_hline(yintercept = 0)
+
+ggplot(mod_results1, aes(sample = residual)) + 
+    geom_qq() + labs(title = "Model 1 results: Bike usage vs. Current Weather")
+
+mod_results2 <- data.frame(observed = weekendDayUsage$cnt, predicted = weekendUsage12$fitted.values, residual = weekendUsage12$residuals)
+
+#residuals for model 2
+ggplot(mod_results2, aes(y = observed, x = predicted))+ geom_point()
+ggplot(mod_results2, aes(y = residual, x = predicted))+ geom_point() + geom_hline(yintercept = 0)
+
+ggplot(mod_results2, aes(sample = residual)) + 
+    geom_qq()+ labs(title = "Model 2 results: Bike usage vs. Weather 12 hours ago")
+
+mod_results3 <- data.frame(observed = weekendDayUsage$cnt, predicted = weekendUsage24$fitted.values, residual = weekendUsage24$residuals)
+
+#residuals for model 3
+ggplot(mod_results3, aes(y = observed, x = predicted))+ geom_point()
+ggplot(mod_results3, aes(y = residual, x = predicted))+ geom_point() + geom_hline(yintercept = 0)
+
+ggplot(mod_results3, aes(sample = residual)) + 
+    geom_qq()+ labs(title = "Model 3 results: Bike usage vs. Weather 24 hours ago")
+
+
+
+```
+
+## Correlation of Morning Communte with Afternoon Commute
+```{r}
+weekdays <- bike_data %>%
+  filter(is_weekend == 0)
+
+morning_commutes <- weekdays %>%
+  filter(grepl("08:00:00", timestamp))
+
+afternoon_commutes <- weekdays %>%
+  filter(grepl("17:00:00", timestamp))
+afternoon_commutes <- afternoon_commutes[-c(519),] #one extra value
+
+commutes <- data.frame(morning = morning_commutes$cnt, afternoon = afternoon_commutes$cnt)
+ggplot(commutes, aes(y= afternoon, x = morning)) + geom_point() + geom_abline()
+
+model_commutes <- lm(afternoon ~ morning , data = commutes)
+summary(model_commutes)
+
+#Adjusted R-squared: 0.4159
+```
+
